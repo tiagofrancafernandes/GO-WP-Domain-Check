@@ -105,3 +105,41 @@ Ou com múltiplas domínios:
 ```sh
 ./wordpress-checker domain.com seconddomain.com
 ```
+
+#### Exemplos de saída
+```sh
+go run main.go domain.com
+```
+Saída
+```
+[
+  {
+    "domain": "domain.com",
+    "final_url": "https://www.domain.com/",
+    "is_wordpress": false,
+    "wordpress_version": "",
+    "wordpress_evidences": "",
+    "errors": [
+      "status code 403"
+    ]
+  }
+]
+```
+-----
+
+```sh
+go run main.go wordpress.com
+```
+Saída
+```
+[
+  {
+    "domain": "wordpress.com",
+    "final_url": "https://wordpress.com",
+    "is_wordpress": true,
+    "wordpress_version": "Unknown",
+    "wordpress_evidences": "wp-content",
+    "errors": []
+  }
+]
+```
