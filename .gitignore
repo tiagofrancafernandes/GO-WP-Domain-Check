@@ -10,3 +10,6 @@
 /*.txt
 _ide_helper*
 /wordpress-checker*
+
+/output
+!output/.gitignore
