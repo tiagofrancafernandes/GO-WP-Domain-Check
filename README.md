@@ -29,20 +29,28 @@ Se você precisar compilar para diferentes sistemas operacionais, pode usar as v
 
 * Para Windows:
 ```sh
-GOOS=windows GOARCH=amd64 go build -o wordpress-checker.exe main.go
+GOOS=windows GOARCH=amd64 go build -o wordpress-checker-windows-amd64.exe main.go
 ```
-
 
 * Para Linux:
 ```sh
-GOOS=linux GOARCH=amd64 go build -o wordpress-checker main.go
+GOOS=linux GOARCH=amd64 go build -o wordpress-checker-linux-amd64 main.go
 ```
-
 
 * Para macOS:
+
+Chip Intel:
 ```sh
-GOOS=darwin GOARCH=amd64 go build -o wordpress-checker main.go
+GOOS=darwin GOARCH=amd64 go build -o wordpress-checker_macos_amd64 main.go
 ```
+
+Apple Silicon (M1/M2):
+```sh
+GOOS=darwin GOARCH=arm64 go build -o wordpress-checker_macos_arm64 main.go
+```
+
+--------------
+###### Shell Scripts
 
 Ou pode usar os scripts shell abaixo:
 
@@ -59,12 +67,18 @@ Ou pode usar os scripts shell abaixo:
 ./build-mac-darwin-amd64.sh ## output/macos/wordpress-checker-darwin-amd64
 ```
 
+```sh
+./build-mac-darwin-arm64.sh ## output/macos/wordpress-checker-darwin-arm64
+```
+
+
 A saída do executável estará no diretório `output/[SO]` onde SO é o sistema operacional.
 ```
 output
 ├── linux/wordpress-checker-linux-amd64
 ├── macos
 │   └── wordpress-checker-darwin-amd64
+│   └── wordpress-checker-darwin-arm64
 └── windows
     └── wordpress-checker-windows-amd64.exe
 ```
