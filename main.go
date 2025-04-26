@@ -3,39 +3,54 @@ package main
 import (
     "crypto/tls"
     "encoding/json"
+    "flag"
     "fmt"
     "io/ioutil"
     "net"
     "net/http"
-    "net/url"
-    "os"
+    // "net/url"
+    // "os"
     "regexp"
+    // "strconv"
     "strings"
+    "sync"
     "time"
 )
 
 type Result struct {
     Domain            string   `json:"domain"`
+    DomainIsValid     bool     `json:"domain_is_valid"`
+    DomainHasDNSRecord bool    `json:"domain_has_dns_record"`
     FinalURL          string   `json:"final_url"`
     IsWordPress       bool     `json:"is_wordpress"`
     WordPressVersion  string   `json:"wordpress_version"`
-    WordPressEvidences string `json:"wordpress_evidences"`
+    WordPressEvidences string  `json:"wordpress_evidences"`
+    ResponseTime      string   `json:"response_time"`
     Errors            []string `json:"errors"`
 }
 
 func main() {
-    if len(os.Args) < 2 {
-        fmt.Println("Usage: go run main.go <domain1> <domain2> ...")
+    maxConcurrency := flag.Int("max_concurrency", 5, "Maximum number of concurrent requests")
+    timeout := flag.Int("timeout", 10, "Request timeout in seconds")
+    flag.Parse()
+
+    if *maxConcurrency < 1 {
+        fmt.Println("Invalid max concurrency value. Must be greater than or equal to 1.")
         return
     }
 
-    domains := os.Args[1:]
-    results := []Result{}
-
-    for _, domain := range domains {
-        result := checkDomain(domain)
-        results = append(results, result)
+    if *timeout < 1 {
+        fmt.Println("Invalid timeout value. Must be greater than or equal to 1.")
+        return
     }
+
+    domains := flag.Args()
+    if len(domains) == 0 {
+        fmt.Println("Usage: go run main.go --max_concurrency <max_concurrency> --timeout <timeout> <domain1> <domain2> ...")
+        return
+    }
+
+    results := processDomainsConcurrently(domains, *maxConcurrency, *timeout)
 
     jsonResult, err := json.MarshalIndent(results, "", "  ")
     if err != nil {
@@ -46,8 +61,41 @@ func main() {
     fmt.Println(string(jsonResult))
 }
 
-func checkDomain(domain string) Result {
-    result := Result{Domain: domain}
+func processDomainsConcurrently(domains []string, maxConcurrency, timeout int) []Result {
+    var wg sync.WaitGroup
+    results := make([]Result, 0, len(domains))
+    resultChan := make(chan Result, len(domains))
+    sem := make(chan struct{}, maxConcurrency)
+
+    for _, domain := range domains {
+        wg.Add(1)
+        sem <- struct{}{} // Acquire a slot
+        go func(domain string) {
+            defer wg.Done()
+            defer func() { <-sem }() // Release the slot
+            result := checkDomain(domain, timeout)
+            resultChan <- result
+        }(domain)
+    }
+
+    go func() {
+        wg.Wait()
+        close(resultChan)
+    }()
+
+    for result := range resultChan {
+        results = append(results, result)
+    }
+
+    return results
+}
+
+func checkDomain(domain string, timeout int) Result {
+    result := Result{
+        Domain: domain,
+        DomainIsValid: false,
+        DomainHasDNSRecord: false,
+    }
     errors := []string{}
 
     // Validate domain structure
@@ -57,6 +105,9 @@ func checkDomain(domain string) Result {
         return result
     }
 
+    // Mark domain as valid
+    result.DomainIsValid = true
+
     // Check if domain is registered
     if !isDomainRegistered(domain) {
         errors = append(errors, "domain not registered")
@@ -64,8 +115,15 @@ func checkDomain(domain string) Result {
         return result
     }
 
+    // Mark domain as having DNS records
+    result.DomainHasDNSRecord = true
+
     // Make initial request
-    finalURL, statusCode, body, err := makeRequest(domain, false)
+    startTime := time.Now()
+    finalURL, statusCode, body, err := makeRequest(domain, false, timeout)
+    responseTime := time.Since(startTime)
+    result.ResponseTime = responseTime.String()
+
     if err != nil {
         errors = append(errors, err.Error())
     }
@@ -73,7 +131,10 @@ func checkDomain(domain string) Result {
     // Handle SSL errors
     if err != nil && strings.Contains(err.Error(), "x509") {
         errors = append(errors, "SSL error")
-        finalURL, statusCode, body, err = makeRequest(domain, true)
+        startTime = time.Now()
+        finalURL, statusCode, body, err = makeRequest(domain, true, timeout)
+        responseTime = time.Since(startTime)
+        result.ResponseTime = responseTime.String()
         if err != nil {
             errors = append(errors, err.Error())
         }
@@ -108,8 +169,9 @@ func checkDomain(domain string) Result {
 }
 
 func isValidDomain(domain string) bool {
-    _, err := url.ParseRequestURI("https://" + domain)
-    return err == nil
+    // Regex para validar a estrutura do domínio
+    domainRegex := regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$`)
+    return domainRegex.MatchString(domain)
 }
 
 func isDomainRegistered(domain string) bool {
@@ -117,9 +179,9 @@ func isDomainRegistered(domain string) bool {
     return err == nil
 }
 
-func makeRequest(domain string, ignoreSSL bool) (string, int, string, error) {
+func makeRequest(domain string, ignoreSSL bool, timeout int) (string, int, string, error) {
     client := &http.Client{
-        Timeout: 10 * time.Second,
+        Timeout: time.Duration(timeout) * time.Second,
     }
     if ignoreSSL {
         client.Transport = &http.Transport{
